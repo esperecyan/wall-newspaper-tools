@@ -1,0 +1,81 @@
+#@~^AQAAAA==~IAAAAA==^#~@ function toPSString(str) { return "'" + str.replace(/%/g, '"%"').replace(/'/g, "''") + "'"; } /* -*- mode: powershell;-*-
+<#*/ var command = 'param([parameter(ValueFromRemainingArguments=$true)][array]$imagePaths)'
+	+ '; $_PSCommandPath = ' + toPSString(WSH.ScriptFullName)
+	+ '; Invoke-Expression (Get-Content ' + toPSString(WSH.ScriptFullName) + ' -Encoding UTF8 -Raw)';
+var namePattern = /^-(?!(?:b(?:and|or|xor|not)|sh[lr]|[ic]?(?:eq|ne|gt|ge|lt|le|(?:not)?(?:like|match|contains|in)|replace|split)|join|is(?:not)?|as|and|or|not|f)$)[0-9a-z]+$/i;
+var args = ''; for (var i = 0; i < WSH.Arguments.Length; i++) {
+    var arg = WSH.Arguments(i); args += ' ' + (namePattern.test(arg) ? arg : toPSString(arg)); }
+WSH.CreateObject('WScript.Shell').Run('PowerShell -NoExit -Command &{' + command + '}' + args); /*#>
+<#
+.SYNOPSIS
+	複数枚の画像を1枚の画像へアトラス化するPowerShellスクリプトです。
+.DESCRIPTION
+	拡張子を除くファイル名が「1」〜「4」になっている4枚の画像を、このスクリプトファイルへドロップすると、
+	結合されて2048px×2048pxのPNG画像として保存されます。
+
+	SPDX-License-Identifier: MIT
+	SPDX-FileCopyrightText: 2023 バーチャルライフマガジン
+#>
+#Requires -Version 5.0
+
+using namespace System.IO
+using namespace System.Drawing
+using namespace System.Drawing.Imaging
+using namespace System.Windows.Forms
+
+Set-StrictMode -Version Latest; $ErrorActionPreference = 'Stop';
+$PSCommandPath = $_PSCommandPath; $PSScriptRoot = Split-Path $PSCommandPath -Parent
+
+
+Add-Type -AssemblyName @('System.Drawing', 'System.Drawing', 'System.Windows.Forms')
+
+$TEXTURE_SIZE = 2048
+$PAGE_COUNT = 4;
+$HORIZONTALLY_PAGE_COUNT = 2
+$VERTICALLY_PAGE_COUNT = $PAGE_COUNT / $HORIZONTALLY_PAGE_COUNT
+$DESTINATION_FILE_NAME = "1-$PAGE_COUNT.png"
+$DESTINATION_IMAGE_FORMAT = [ImageFormat]::Png
+
+if (!$imagePaths) {
+	[MessageBox]::Show("${PAGE_COUNT}枚の画像ファイルをドロップしてください。", (Split-Path $PSCommandPath -Leaf))
+	exit
+}
+
+$rectangle = New-Object Rectangle(
+	0,
+	0,
+	($TEXTURE_SIZE / $HORIZONTALLY_PAGE_COUNT),
+	($TEXTURE_SIZE / $VERTICALLY_PAGE_COUNT)
+)
+
+$bitmap = New-Object Bitmap($TEXTURE_SIZE, $TEXTURE_SIZE, [PixelFormat]::Format24bppRgb)
+$graphics = [Graphics]::FromImage($bitmap)
+
+$i = 0
+foreach ($path in $imagePaths | Sort-Object {
+	$leafBase = [Path]::GetFileNameWithoutExtension($_)
+	$page = $null
+	if (![int]::TryParse($leafBase, [ref]$page)) {
+		[MessageBox]::Show("以下のファイル名「$leafBase」は整数ではありません。\n$_")
+		exit
+	}
+	return $page
+}) {
+	$image = [Image]::FromFile($path)
+
+	$rectangle.X = ($i % $HORIZONTALLY_PAGE_COUNT) * $rectangle.Width
+	$rectangle.Y = [Math]::Floor($i / $HORIZONTALLY_PAGE_COUNT) * $rectangle.Height
+	$graphics.DrawImage($image, $rectangle)
+
+	$image.Dispose()
+
+	$i++
+}
+
+$destinationPath = Join-Path (Split-Path $imagePaths[0] -Parent) $DESTINATION_FILE_NAME
+$bitmap.Save($destinationPath, $DESTINATION_IMAGE_FORMAT)
+
+[MessageBox]::Show("以下のファイルへ保存しました。`n$destinationPath", (Split-Path $PSCommandPath -Leaf))
+
+
+(Get-Process -Id $pid).CloseMainWindow() | Out-Null # */
